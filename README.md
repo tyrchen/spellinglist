@@ -2,9 +2,14 @@
 
 An intelligent iOS educational app that helps students efficiently learn and retain vocabulary through automated quiz generation from uploaded documents.
 
+English | [简体中文](./README-zh.md)
+
+![screenshot](./docs/images/screenshot.jpg)
+
 ## Features
 
 ### Smart Content Extraction
+
 - Upload PDF or image files containing vocabulary lists
 - OCR technology extracts text from documents
 - Intelligent parsing recognizes word-definition pairs in multiple formats:
@@ -14,6 +19,7 @@ An intelligent iOS educational app that helps students efficiently learn and ret
   - Custom separator support
 
 ### Interactive Quiz System
+
 - Automatically generates multiple-choice questions
 - Randomized answer options to prevent position memorization
 - Progress tracking with visual progress bar
@@ -21,6 +27,7 @@ An intelligent iOS educational app that helps students efficiently learn and ret
 - Swipe-to-delete vocabulary sets
 
 ### Gamified Learning Experience
+
 - Instant visual feedback (green for correct, red for incorrect)
 - System sound effects for correct/incorrect answers
 - Haptic feedback for enhanced engagement
@@ -28,17 +35,20 @@ An intelligent iOS educational app that helps students efficiently learn and ret
 - Performance percentage display
 
 ### Second-Chance Learning
+
 - Automatically tracks incorrectly answered words
 - Optional second-chance rounds focus on missed vocabulary
 - Helps reinforce weak areas through targeted practice
 
 ### Data Persistence
+
 - SwiftData integration for local storage
 - Vocabulary sets saved automatically
 - Track statistics for each word (times correct/incorrect)
 - View accuracy percentage per vocabulary set
 
 ### Customization & Settings
+
 - Adjustable number of answer options (2-6)
 - Toggle sound effects on/off
 - Toggle haptic feedback on/off
@@ -48,6 +58,7 @@ An intelligent iOS educational app that helps students efficiently learn and ret
 ## Technical Architecture
 
 ### Technologies Used
+
 - **SwiftUI**: Modern declarative UI framework
 - **SwiftData**: Data persistence and management
 - **Vision Framework**: OCR text recognition from images
@@ -73,12 +84,14 @@ spellinglist/
 ### Key Components
 
 #### Models
+
 - **VocabularyWord**: Individual word with definition and statistics
 - **VocabularySet**: Collection of words from a single document
 - **QuizQuestion**: Question structure with options and correct answer
 - **QuizSession**: Observable object managing quiz state and logic
 
 #### Services
+
 - **OCRService**: Handles text extraction from images and PDFs using Vision framework
 - **VocabularyParser**: Smart parsing with pattern recognition for various formats
 
