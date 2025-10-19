@@ -1,6 +1,6 @@
 # Vocabulary Quiz Generator
 
-An intelligent iOS educational app that helps students efficiently learn and retain vocabulary through automated quiz generation from uploaded documents.
+An intelligent iOS educational app that helps students efficiently learn and retain vocabulary through automated quiz generation from uploaded documents. My wife did it after I taught her how to generate iPhone app using claude code (with some of my help).
 
 English | [简体中文](./README-zh.md)
 
