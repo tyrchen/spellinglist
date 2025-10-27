@@ -70,10 +70,32 @@ class QuizSession: ObservableObject {
     @Published var incorrectWords: [VocabularyWord] = []
     @Published var isQuizComplete = false
     @Published var isSecondChanceRound = false
+    @Published var generationError: String?
 
     @MainActor
-    func generateQuiz(from words: [VocabularyWord], numberOfOptions: Int = 4) async {
-        guard words.count >= numberOfOptions else { return }
+    func generateQuiz(from words: [VocabularyWord], numberOfOptions: Int = 4) async -> Bool {
+        // Clear any previous error
+        generationError = nil
+
+        // Validate minimum word count
+        guard !words.isEmpty else {
+            generationError = "Cannot generate quiz: No vocabulary words available."
+            return false
+        }
+
+        // Need at least 2 words for a quiz (1 question with 1 correct answer and 1 distractor)
+        guard words.count >= 2 else {
+            generationError = "Cannot generate quiz: Need at least 2 vocabulary words. Currently have \(words.count)."
+            return false
+        }
+
+        // Adjust numberOfOptions if we don't have enough words
+        let effectiveNumberOfOptions = min(numberOfOptions, words.count)
+
+        // If we adjusted, log it (but don't fail)
+        if effectiveNumberOfOptions < numberOfOptions {
+            print("Note: Adjusted quiz options from \(numberOfOptions) to \(effectiveNumberOfOptions) based on available words")
+        }
 
         // Generate questions on background thread
         let quizQuestions = await Task.detached {
@@ -85,7 +107,7 @@ class QuizSession: ObservableObject {
 
                 // Randomly select distractors
                 let shuffledOthers = otherDefinitions.shuffled()
-                let numberOfDistractors = min(numberOfOptions - 1, shuffledOthers.count)
+                let numberOfDistractors = min(effectiveNumberOfOptions - 1, shuffledOthers.count)
                 let distractors = Array(shuffledOthers.prefix(numberOfDistractors))
 
                 // Create options array with correct answer and distractors
@@ -94,7 +116,11 @@ class QuizSession: ObservableObject {
                 options.shuffle()
 
                 // Find the index of the correct answer
-                let correctIndex = options.firstIndex(of: word.definition) ?? 0
+                guard let correctIndex = options.firstIndex(of: word.definition) else {
+                    // This should never happen, but handle it gracefully
+                    print("Warning: Could not find correct answer in options for word: \(word.word)")
+                    continue
+                }
 
                 let question = QuizQuestion(
                     wordText: word.word,
@@ -109,12 +135,20 @@ class QuizSession: ObservableObject {
             return questions.shuffled()
         }.value
 
+        // Validate we actually generated questions
+        guard !quizQuestions.isEmpty else {
+            generationError = "Failed to generate quiz questions. Please try again."
+            return false
+        }
+
         // Update state on main thread
         self.questions = quizQuestions
         self.currentQuestionIndex = 0
         self.score = 0
         self.incorrectWords = []
         self.isQuizComplete = false
+
+        return true
     }
 
     func submitAnswer(_ answerIndex: Int, word: VocabularyWord) {
@@ -144,10 +178,13 @@ class QuizSession: ObservableObject {
     }
 
     @MainActor
-    func startSecondChanceRound() async {
-        guard !incorrectWords.isEmpty else { return }
+    func startSecondChanceRound() async -> Bool {
+        guard !incorrectWords.isEmpty else {
+            generationError = "No incorrect words to review."
+            return false
+        }
         isSecondChanceRound = true
-        await generateQuiz(from: incorrectWords)
+        return await generateQuiz(from: incorrectWords)
     }
 
     func reset() {
