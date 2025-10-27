@@ -15,17 +15,21 @@ struct spellinglistApp: App {
     @State private var showingError = false
     @State private var errorMessage: String?
     @State private var isInMemoryMode = false
+    @State private var isInitializing = true
 
     private let logger = Logger(subsystem: "com.spellinglist.app", category: "Database")
-
-    init() {
-        _modelContainer = State(initialValue: createModelContainer())
-    }
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if let container = modelContainer {
+                if isInitializing {
+                    // Show loading view while initializing
+                    ProgressView("Initializing...")
+                        .task {
+                            // Perform database initialization asynchronously
+                            await initializeDatabase()
+                        }
+                } else if let container = modelContainer {
                     ContentView()
                         .modelContainer(container)
                         .alert("Database Warning", isPresented: $showingError) {
@@ -44,7 +48,9 @@ struct spellinglistApp: App {
                     DatabaseErrorView(
                         errorMessage: errorMessage ?? "Failed to initialize database",
                         onRetry: {
-                            modelContainer = createModelContainer()
+                            Task {
+                                await initializeDatabase()
+                            }
                         }
                     )
                 }
@@ -52,7 +58,30 @@ struct spellinglistApp: App {
         }
     }
 
-    private func createModelContainer() -> ModelContainer? {
+    @MainActor
+    private func initializeDatabase() async {
+        isInitializing = true
+
+        // Perform database initialization on background thread
+        let result = await Task.detached(priority: .userInitiated) { [logger] in
+            return spellinglistApp.createModelContainer(logger: logger)
+        }.value
+
+        modelContainer = result.container
+        errorMessage = result.errorMessage
+        isInMemoryMode = result.isInMemoryMode
+        showingError = result.showingError
+        isInitializing = false
+    }
+
+    struct DatabaseInitResult {
+        let container: ModelContainer?
+        let errorMessage: String?
+        let isInMemoryMode: Bool
+        let showingError: Bool
+    }
+
+    private static func createModelContainer(logger: Logger) -> DatabaseInitResult {
         let schema = Schema([
             VocabularyWord.self,
             VocabularySet.self,
@@ -67,25 +96,28 @@ struct spellinglistApp: App {
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             logger.info("Successfully created persistent ModelContainer")
-            return container
+            return DatabaseInitResult(
+                container: container,
+                errorMessage: nil,
+                isInMemoryMode: false,
+                showingError: false
+            )
         } catch {
             logger.error("Failed to create persistent ModelContainer: \(error.localizedDescription)")
 
             // Try to recover from corrupted database
-            if let recoveredContainer = recoverFromCorruptedDatabase(schema: schema, error: error) {
+            if let recoveredResult = recoverFromCorruptedDatabase(schema: schema, error: error, logger: logger) {
                 logger.warning("Recovered from corrupted database")
-                errorMessage = "Your database was recovered. Some data may have been reset."
-                showingError = true
-                return recoveredContainer
+                return recoveredResult
             }
 
             // Fallback to in-memory storage
             logger.warning("Falling back to in-memory storage")
-            return createInMemoryContainer(schema: schema)
+            return createInMemoryContainer(schema: schema, logger: logger)
         }
     }
 
-    private func recoverFromCorruptedDatabase(schema: Schema, error: Error) -> ModelContainer? {
+    private static func recoverFromCorruptedDatabase(schema: Schema, error: Error, logger: Logger) -> DatabaseInitResult? {
         // Attempt to delete and recreate the database
         logger.info("Attempting database recovery...")
 
@@ -97,25 +129,37 @@ struct spellinglistApp: App {
                 return nil
             }
 
-            // Remove all .store files (SwiftData database files)
+            // Remove all SwiftData-related files (e.g., .store, .store-shm, .store-wal)
             let storeFiles = try fileManager.contentsOfDirectory(at: documentsDirectory, includingPropertiesForKeys: nil)
-            for file in storeFiles where file.pathExtension == "store" {
-                try fileManager.removeItem(at: file)
-                logger.info("Removed corrupted database file at \(file.path)")
+            let dbBaseName = "spellinglist.store"
+            let dbRelatedExtensions = ["store", "store-shm", "store-wal"]
+
+            for file in storeFiles {
+                let fileName = file.lastPathComponent
+                // Remove files that match the base name or auxiliary files
+                if fileName.hasPrefix(dbBaseName) || dbRelatedExtensions.contains(file.pathExtension) {
+                    try fileManager.removeItem(at: file)
+                    logger.info("Removed corrupted database file at \(file.path)")
+                }
             }
 
             // Try to recreate with persistent storage
             let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             logger.info("Successfully recreated database after recovery")
-            return container
+            return DatabaseInitResult(
+                container: container,
+                errorMessage: "Your database was recovered. Some data may have been reset.",
+                isInMemoryMode: false,
+                showingError: true
+            )
         } catch {
             logger.error("Database recovery failed: \(error.localizedDescription)")
             return nil
         }
     }
 
-    private func createInMemoryContainer(schema: Schema) -> ModelContainer? {
+    private static func createInMemoryContainer(schema: Schema, logger: Logger) -> DatabaseInitResult {
         let inMemoryConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: true
@@ -124,13 +168,20 @@ struct spellinglistApp: App {
         do {
             let container = try ModelContainer(for: schema, configurations: [inMemoryConfiguration])
             logger.warning("Created in-memory ModelContainer - data will not persist")
-            errorMessage = "Running in temporary mode. Your data will not be saved permanently. Please check device storage and restart the app."
-            isInMemoryMode = true
-            return container
+            return DatabaseInitResult(
+                container: container,
+                errorMessage: "Running in temporary mode. Your data will not be saved permanently. Please check device storage and restart the app.",
+                isInMemoryMode: true,
+                showingError: false
+            )
         } catch {
             logger.critical("Failed to create even in-memory container: \(error.localizedDescription)")
-            errorMessage = "Critical error: Unable to initialize app database. Error: \(error.localizedDescription)"
-            return nil
+            return DatabaseInitResult(
+                container: nil,
+                errorMessage: "Critical error: Unable to initialize app database. Error: \(error.localizedDescription)",
+                isInMemoryMode: false,
+                showingError: false
+            )
         }
     }
 }

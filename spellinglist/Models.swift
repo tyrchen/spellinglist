@@ -8,6 +8,7 @@
 import Foundation
 import SwiftData
 import Combine
+import os.log
 
 @Model
 class VocabularyWord {
@@ -72,6 +73,8 @@ class QuizSession: ObservableObject {
     @Published var isSecondChanceRound = false
     @Published var generationError: String?
 
+    private let logger = Logger(subsystem: "com.spellinglist.app", category: "QuizSession")
+
     @MainActor
     func generateQuiz(from words: [VocabularyWord], numberOfOptions: Int = 4) async -> Bool {
         // Clear any previous error
@@ -94,11 +97,11 @@ class QuizSession: ObservableObject {
 
         // If we adjusted, log it (but don't fail)
         if effectiveNumberOfOptions < numberOfOptions {
-            print("Note: Adjusted quiz options from \(numberOfOptions) to \(effectiveNumberOfOptions) based on available words")
+            logger.info("Adjusted quiz options from \(numberOfOptions) to \(effectiveNumberOfOptions) based on available words")
         }
 
         // Generate questions on background thread
-        let quizQuestions = await Task.detached {
+        let quizQuestions = await Task.detached { [logger] in
             var questions: [QuizQuestion] = []
 
             for word in words {
@@ -118,7 +121,7 @@ class QuizSession: ObservableObject {
                 // Find the index of the correct answer
                 guard let correctIndex = options.firstIndex(of: word.definition) else {
                     // This should never happen, but handle it gracefully
-                    print("Warning: Could not find correct answer in options for word: \(word.word)")
+                    logger.warning("Could not find correct answer in options for word: \(word.word)")
                     continue
                 }
 
