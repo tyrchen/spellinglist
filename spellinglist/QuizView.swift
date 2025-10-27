@@ -18,6 +18,8 @@ struct QuizView: View {
     @State private var showingFeedback = false
     @State private var audioPlayer: AVAudioPlayer?
     @State private var showCompletionScreen = false
+    @State private var showError = false
+    @State private var isLoading = false
 
     init(vocabularySet: VocabularySet) {
         self.vocabularySet = vocabularySet
@@ -34,7 +36,7 @@ struct QuizView: View {
                         onSecondChance: startSecondChance,
                         onExit: { dismiss() }
                     )
-                } else if !quizSession.questions.isEmpty {
+                } else if !quizSession.questions.isEmpty, let question = currentQuestion {
                     VStack(spacing: 0) {
                         // Progress bar
                         GeometryReader { geometry in
@@ -73,7 +75,7 @@ struct QuizView: View {
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
 
-                                    Text(currentQuestion.wordText)
+                                    Text(question.wordText)
                                         .font(.system(size: 32, weight: .bold))
                                         .multilineTextAlignment(.center)
                                         .padding()
@@ -82,19 +84,19 @@ struct QuizView: View {
                                             RoundedRectangle(cornerRadius: 15)
                                                 .fill(Color.blue.opacity(0.1))
                                         )
-                                        .accessibilityLabel("Word: \(currentQuestion.wordText)")
+                                        .accessibilityLabel("Word: \(question.wordText)")
                                 }
                                 .padding(.top, 20)
                                 .accessibilityElement(children: .combine)
 
                                 // Answer options
                                 VStack(spacing: 15) {
-                                    ForEach(Array(currentQuestion.options.enumerated()), id: \.offset) { index, option in
+                                    ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
                                         AnswerButton(
                                             text: option,
                                             isSelected: selectedAnswerIndex == index,
-                                            isCorrect: showingFeedback && index == currentQuestion.correctAnswerIndex,
-                                            isWrong: showingFeedback && selectedAnswerIndex == index && index != currentQuestion.correctAnswerIndex,
+                                            isCorrect: showingFeedback && index == question.correctAnswerIndex,
+                                            isWrong: showingFeedback && selectedAnswerIndex == index && index != question.correctAnswerIndex,
                                             action: {
                                                 selectAnswer(index)
                                             }
@@ -124,7 +126,7 @@ struct QuizView: View {
                 } else {
                     VStack(spacing: 20) {
                         ProgressView()
-                        Text("Loading quiz...")
+                        Text(isLoading ? "Generating quiz..." : "Loading quiz...")
                             .foregroundColor(.secondary)
                     }
                 }
@@ -138,23 +140,39 @@ struct QuizView: View {
                     }
                 }
             }
+            .alert("Quiz Generation Error", isPresented: $showError) {
+                Button("OK") {
+                    dismiss()
+                }
+            } message: {
+                Text(quizSession.generationError ?? "Failed to generate quiz")
+            }
         }
         .task {
-            if quizSession.questions.isEmpty {
-                await quizSession.generateQuiz(from: vocabularySet.words)
+            if quizSession.questions.isEmpty && !isLoading {
+                isLoading = true
+                let success = await quizSession.generateQuiz(from: vocabularySet.words)
+                isLoading = false
+
+                if !success {
+                    showError = true
+                }
             }
         }
     }
 
-    private var currentQuestion: QuizQuestion {
-        guard quizSession.currentQuestionIndex < quizSession.questions.count else {
-            return quizSession.questions.first ?? QuizQuestion(wordText: "", correctDefinition: "", options: [], correctAnswerIndex: 0)
+    private var currentQuestion: QuizQuestion? {
+        guard !quizSession.questions.isEmpty,
+              quizSession.currentQuestionIndex >= 0,
+              quizSession.currentQuestionIndex < quizSession.questions.count else {
+            return nil
         }
         return quizSession.questions[quizSession.currentQuestionIndex]
     }
 
     private var currentWord: VocabularyWord? {
-        return vocabularySet.words.first { $0.word == currentQuestion.wordText }
+        guard let question = currentQuestion else { return nil }
+        return vocabularySet.words.first { $0.word == question.wordText }
     }
 
     private var progress: Double {
@@ -164,6 +182,7 @@ struct QuizView: View {
 
     private func selectAnswer(_ index: Int) {
         guard !showingFeedback else { return }
+        guard let question = currentQuestion else { return }
         guard let word = currentWord else { return }
 
         selectedAnswerIndex = index
@@ -171,7 +190,7 @@ struct QuizView: View {
         showingFeedback = true
 
         // Play sound effect
-        if index == currentQuestion.correctAnswerIndex {
+        if index == question.correctAnswerIndex {
             playSound(named: "correct")
             generateHapticFeedback(style: .success)
         } else {
@@ -191,13 +210,25 @@ struct QuizView: View {
     private func restartQuiz() {
         Task {
             quizSession.reset()
-            await quizSession.generateQuiz(from: vocabularySet.words)
+            isLoading = true
+            let success = await quizSession.generateQuiz(from: vocabularySet.words)
+            isLoading = false
+
+            if !success {
+                showError = true
+            }
         }
     }
 
     private func startSecondChance() {
         Task {
-            await quizSession.startSecondChanceRound()
+            isLoading = true
+            let success = await quizSession.startSecondChanceRound()
+            isLoading = false
+
+            if !success {
+                showError = true
+            }
         }
     }
 

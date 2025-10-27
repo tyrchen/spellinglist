@@ -36,12 +36,14 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Link(destination: URL(string: "https://github.com/yourusername/vocabularyquiz")!) {
-                        HStack {
-                            Text("GitHub")
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .foregroundColor(.blue)
+                    if let githubURL = URL(string: "https://github.com/tyrchen/spellinglist") {
+                        Link(destination: githubURL) {
+                            HStack {
+                                Text("GitHub")
+                                Spacer()
+                                Image(systemName: "arrow.up.right.square")
+                                    .foregroundColor(.blue)
+                            }
                         }
                     }
                 }
